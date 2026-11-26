@@ -98,3 +98,45 @@ EW.formatClock = function (seconds) {
   var r = s % 60;
   return m + ':' + (r < 10 ? '0' : '') + r;
 };
+
+// --------------------------------------------------------------- noise
+// Deterministic value noise for procedural terrain/cloud texture. All
+// sampling is in world coordinates so neighbouring cells correlate and
+// the ground does not read as a checkerboard of independent cells.
+
+// Integer lattice hash -> [0, 1). Stable across machines and frames.
+EW.hash2 = function (ix, iy) {
+  var h = (ix * 374761393 + iy * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
+// Smooth bilinear value noise at (x, y); lattice spacing 1.
+EW.valueNoise = function (x, y) {
+  var ix = Math.floor(x);
+  var iy = Math.floor(y);
+  var fx = x - ix;
+  var fy = y - iy;
+  var sx = fx * fx * (3 - 2 * fx);
+  var sy = fy * fy * (3 - 2 * fy);
+  var a = EW.hash2(ix, iy);
+  var b = EW.hash2(ix + 1, iy);
+  var c = EW.hash2(ix, iy + 1);
+  var d = EW.hash2(ix + 1, iy + 1);
+  return EW.lerp(EW.lerp(a, b, sx), EW.lerp(c, d, sx), sy);
+};
+
+// Fractal sum of value-noise octaves, normalised to roughly [0, 1].
+EW.fbm = function (x, y, octaves) {
+  var sum = 0;
+  var amp = 0.5;
+  var norm = 0;
+  for (var o = 0; o < octaves; o++) {
+    sum += EW.valueNoise(x, y) * amp;
+    norm += amp;
+    x = x * 2.03 + 11.7;
+    y = y * 2.03 + 5.3;
+    amp *= 0.5;
+  }
+  return sum / norm;
+};

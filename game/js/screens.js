@@ -305,6 +305,7 @@ EW.drawHowTo = function (ctx, game, viewW, viewH) {
     ['Mouse drag', 'steer by dragging'],
     ['P / Esc', 'pause'],
     ['M', 'mute'],
+    ['F', 'toggle cinematic FX (grade, grain, flare)'],
   ];
   lines.forEach(function (line, i) {
     ctx.fillStyle = '#ffd23e';

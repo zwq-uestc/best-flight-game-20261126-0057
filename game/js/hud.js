@@ -314,14 +314,18 @@ EW.drawHUD = function (ctx, game, viewW, viewH) {
     ctx.fillText('LOW FUEL', cx, cy - 74);
   }
 
-  // transient message banner
+  // transient message banner, with a scale-in pop when it appears
   if (game.message && game.message.t > 0) {
     var alpha = EW.clamp(game.message.t, 0, 1);
+    var age = 2.4 - game.message.t;
+    var popT = EW.clamp(age / 0.22, 0, 1);
+    var u = popT - 1;
+    var pop = 1 + 2.70158 * u * u * u + 1.70158 * u * u; // easeOutBack
+    var fontSize = Math.round(26 * pop);
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = 'rgba(10,14,22,0.7)';
+    ctx.font = 'bold ' + fontSize + 'px Arial';
     var mw = ctx.measureText(game.message.text).width;
-    ctx.font = 'bold 26px Arial';
-    mw = ctx.measureText(game.message.text).width;
+    ctx.fillStyle = 'rgba(10,14,22,0.7)';
     ctx.fillRect(cx - mw / 2 - 18, cy - 150, mw + 36, 42);
     ctx.fillStyle = game.message.color || '#ffd23e';
     ctx.fillText(game.message.text, cx, cy - 120);

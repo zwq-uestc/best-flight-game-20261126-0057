@@ -67,7 +67,6 @@
     parcelsDone: 0,
     parcelsCarried: 0,
     parcels: [],
-    particles: [],
     combo: 0,
     ringScore: 0,
     parcelScore: 0,
@@ -81,11 +80,10 @@
     buttons: [],
     keys: {},
     mouse: { x: 0, y: 0, down: false, dragX: 0, dragY: 0 },
-    shake: 0,
+    cloudFactor: 0,
     endTimer: 0,
     shotClock: 0,
-    smokeClock: 0,
-    volcanoClock: 0,
+    shotFxDone: false,
     prevRingDot: 0,
   };
   EW.Sound.setMuted(game.save.muted);
@@ -95,50 +93,8 @@
   }
 
   // ------------------------------------------------------------ particles
-
-  function spawnParticle(x, y, z, vx, vy, vz, life, size, color, alpha, gravity) {
-    if (game.particles.length > 420) game.particles.shift();
-    game.particles.push({
-      x: x, y: y, z: z, vx: vx, vy: vy, vz: vz,
-      life: life, maxLife: life, size: size, color: color,
-      alpha: alpha === undefined ? 0.85 : alpha, gravity: gravity || 0,
-    });
-  }
-
-  function burst(x, y, z, count, color, speed, size, life, gravity) {
-    for (var i = 0; i < count; i++) {
-      var a = Math.random() * EW.TAU;
-      var b = Math.random() * Math.PI - Math.PI / 2;
-      var s = speed * (0.35 + Math.random() * 0.85);
-      spawnParticle(
-        x, y, z,
-        Math.cos(a) * Math.cos(b) * s, Math.sin(a) * Math.cos(b) * s, Math.sin(b) * s,
-        life * (0.6 + Math.random() * 0.7), size * (0.6 + Math.random() * 0.8), color, 0.9, gravity
-      );
-    }
-  }
-
-  function explosion(x, y, z) {
-    burst(x, y, z, 46, '#ff8c3c', 16, 3.2, 1.1, -2);
-    burst(x, y, z, 30, '#ffd23e', 10, 2.4, 0.8, -1);
-    burst(x, y, z, 36, '#5a5f6a', 7, 4.2, 2.2, 1.5);
-  }
-
-  function stepParticles(dt) {
-    for (var i = game.particles.length - 1; i >= 0; i--) {
-      var p = game.particles[i];
-      p.life -= dt;
-      if (p.life <= 0) {
-        game.particles.splice(i, 1);
-        continue;
-      }
-      p.vz += p.gravity * dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.z += p.vz * dt;
-      if (p.color === '#5a5f6a' || p.color === '#8a8f98') p.size += dt * 2.4;
-    }
-  }
+  // All particle work lives in EW.FX (fx.js): pooled sprites, emitters,
+  // shockwaves, popups, trauma shake, and the post pass.
 
   // ------------------------------------------------------------ mission flow
 
@@ -158,7 +114,8 @@
     game.parcelsDone = 0;
     game.parcelsCarried = game.world.course.parcels;
     game.parcels = [];
-    game.particles = [];
+    EW.FX.reset();
+    game.cloudFactor = 0;
     game.timeLeft = game.world.course.timeLimit;
     game.endTimer = 0;
     game.prevRingDot = 0;
@@ -172,7 +129,8 @@
     game.cam = EW.makeCamera();
     game.nextRing = 0;
     game.parcels = [];
-    game.particles = [];
+    EW.FX.reset();
+    game.cloudFactor = 0;
     updateObjective();
   }
 
@@ -267,11 +225,16 @@
         game.score = game.ringScore + game.parcelScore + game.landingScore;
         showMessage(ev.amount === 3 ? 'SMOOTH LANDING +' + pts : ev.amount === 2 ? 'FIRM LANDING +' + pts : 'ROUGH LANDING +' + pts, '#57e389');
         EW.Sound.touchdown(ev.amount === 1);
-        burst(plane.x, plane.y, plane.z - 1, 14, '#c9b896', 5, 2.2, 0.8, 1);
+        EW.FX.popup(plane.x, plane.y, plane.z + 2,
+          (ev.amount === 3 ? 'SMOOTH +' : ev.amount === 2 ? 'FIRM +' : 'ROUGH +') + pts,
+          ev.amount === 3 ? '#7dff8a' : ev.amount === 2 ? '#ffe08a' : '#ffb08a', true);
+        EW.FX.landingDust(plane, ev.amount === 3 ? 0.5 : ev.amount === 2 ? 0.85 : 1.25);
+        EW.FX.addTrauma(ev.amount === 3 ? 0.14 : ev.amount === 2 ? 0.28 : 0.45);
       } else if (ev.type === 'fieldLanding') {
         showMessage('ROUGH FIELD LANDING — HULL DAMAGE', '#ffb03a');
         EW.Sound.touchdown(true);
-        game.shake = Math.max(game.shake, 0.5);
+        EW.FX.landingDust(plane, 0.8);
+        EW.FX.addTrauma(0.35);
       } else if (ev.type === 'stopped') {
         var local = EW.runwayLocal(game.world, plane.x, plane.y);
         var onStrip = Math.abs(local.along) <= game.world.runway.len / 2 + 8 && Math.abs(local.across) <= game.world.runway.width / 2 + 4;
@@ -288,19 +251,22 @@
       } else if (ev.type === 'takeoff') {
         showMessage('AIRBORNE', '#e8eef8');
       } else if (ev.type === 'damage') {
-        game.shake = Math.max(game.shake, 0.35 + ev.amount * 0.012);
         EW.Sound.damage();
-        burst(plane.x, plane.y, plane.z, 10, '#ffb03a', 6, 1.8, 0.6, -3);
+        EW.FX.damageSparks(plane);
+        EW.FX.addTrauma(0.35 + ev.amount * 0.012);
       } else if (ev.type === 'buildingHit') {
         showMessage('CLIPPED A BUILDING!', '#ff5a4e');
+        EW.FX.damageSparks(plane);
+        EW.FX.addTrauma(0.55);
       } else if (ev.type === 'stall') {
         showMessage('STALL — NOSE DOWN, GAIN SPEED', '#ff5a4e');
       } else if (ev.type === 'fuelEmpty') {
         showMessage('FUEL EXHAUSTED — GLIDE TO THE STRIP', '#ff5a4e');
       } else if (ev.type === 'crashed' || ev.type === 'ditched' || ev.type === 'destroyed') {
-        explosion(plane.x, plane.y, plane.z);
+        if (ev.type === 'ditched') EW.FX.splash(plane.x, plane.y, 0.4);
+        else EW.FX.explosion(plane.x, plane.y, plane.z);
         EW.Sound.crash();
-        game.shake = 1.2;
+        EW.FX.addTrauma(1);
         game.endTimer = 1.4;
         game.failReason = ev.type === 'ditched'
           ? 'Ditched in the sea. The mail is soggy, the Emberwing is a reef.'
@@ -337,12 +303,20 @@
         game.score = game.ringScore + game.parcelScore + game.landingScore;
         showMessage('RING ' + game.ringsDone + '/' + world.rings.length + '  +' + pts, '#ffd23e');
         EW.Sound.ring(game.combo);
-        burst(ring.x, ring.y, ring.z, 18, '#ffd23e', 7, 2, 0.7, 0);
+        EW.FX.ringBurst(ring);
+        EW.FX.popup(ring.x, ring.y, ring.z + 3, '+' + pts, '#ffd23e', false);
+        if (game.combo >= 3) {
+          EW.FX.popup(ring.x, ring.y, ring.z + 7, 'COMBO x' + game.combo, '#ff9d3e', true);
+        }
         game.prevRingDot = 0;
       } else if (crossed && radial > ring.r && dist < ring.r * 3.2) {
         game.combo = 0;
         showMessage('MISSED THE RING — CIRCLE BACK', '#ffb03a');
         EW.Sound.miss();
+        if (radial < ring.r * 1.6) {
+          EW.FX.addTrauma(0.12);
+          EW.FX.popup(ring.x, ring.y, ring.z + 3, 'SO CLOSE', '#ffb08a', false);
+        }
         game.prevRingDot = dot;
       } else {
         game.prevRingDot = dot;
@@ -357,7 +331,8 @@
         plane.fuel = Math.min(100, plane.fuel + 25);
         showMessage('+25 FUEL', '#57e389');
         EW.Sound.fuelPickup();
-        burst(can.x, can.y, can.z, 12, '#57e389', 5, 1.8, 0.6, 0);
+        EW.FX.sparkle(can.x, can.y, can.z, 'rgb(87,227,137)');
+        EW.FX.popup(can.x, can.y, can.z + 3, '+FUEL', '#57e389', false);
       }
     });
 
@@ -393,11 +368,12 @@
           game.score = game.ringScore + game.parcelScore + game.landingScore;
           showMessage('PARCEL DELIVERED +' + pts, '#57e389');
           EW.Sound.parcelHit(true);
-          burst(parcel.x, parcel.y, parcel.z + 1, 12, '#57e389', 5, 1.8, 0.6, -2);
+          EW.FX.sparkle(parcel.x, parcel.y, parcel.z + 1, 'rgb(87,227,137)');
+          EW.FX.popup(parcel.x, parcel.y, parcel.z + 3, '+' + pts, '#57e389', false);
         } else {
           showMessage('PARCEL MISSED THE BEACON', '#ffb03a');
           EW.Sound.parcelHit(false);
-          burst(parcel.x, parcel.y, parcel.z + 1, 8, '#c9b896', 4, 1.8, 0.6, -2);
+          EW.FX.puffBurst(parcel.x, parcel.y, parcel.z + 1, 8, 'rgb(201,184,150)', 4, 1.8, 0.6, -2);
         }
       }
     });
@@ -420,6 +396,7 @@
       landed: false,
     });
     EW.Sound.dropWhistle();
+    EW.FX.puffBurst(plane.x, plane.y, plane.z - 1.5, 6, 'rgb(232,220,200)', 2, 0.7, 0.5, 0);
     showMessage('PARCEL AWAY — ' + game.parcelsCarried + ' LEFT', '#e8eef8');
   }
 
@@ -496,26 +473,8 @@
       stepObjectives(dt);
     }
 
-    // damage smoke and fire
-    game.smokeClock -= dt;
-    if (!plane.dead && plane.hull < 55 && game.smokeClock <= 0) {
-      game.smokeClock = 0.06;
-      spawnParticle(plane.x, plane.y, plane.z + 0.4, 0, 0, 1.5, 1.4, 1.6, '#5a5f6a', 0.5, 1.2);
-      if (plane.hull < 28) {
-        spawnParticle(plane.x, plane.y, plane.z + 0.4, 0, 0, 2, 0.5, 1.6, '#ff8c3c', 0.85, 2);
-      }
-    }
-    // volcano smoke plume
-    game.volcanoClock -= dt;
-    if (game.volcanoClock <= 0) {
-      game.volcanoClock = 0.4;
-      var v = world.volcano;
-      spawnParticle(
-        v.x + (Math.random() - 0.5) * 30, v.y + (Math.random() - 0.5) * 30, v.h * 0.82,
-        Math.sin(world.windDir) * world.windSpeed * 0.6, Math.cos(world.windDir) * world.windSpeed * 0.6, 7,
-        5, 7, '#8a8f98', 0.32, 1.1
-      );
-    }
+    // FX: emitters, particles, waves, popups, cloud factor, shake decay
+    EW.FX.step(dt, game);
     // clouds drift with the wind
     world.clouds.forEach(function (cloud) {
       cloud.x += Math.sin(world.windDir) * world.windSpeed * 0.55 * dt;
@@ -525,12 +484,10 @@
       if (cloud.y > 3400) cloud.y = -3400;
       if (cloud.y < -3400) cloud.y = 3400;
     });
-    stepParticles(dt);
     if (game.message) {
       game.message.t -= dt;
       if (game.message.t <= 0) game.message = null;
     }
-    game.shake = Math.max(0, game.shake - dt * 1.6);
   }
 
   // ------------------------------------------------------------ rendering
@@ -538,14 +495,16 @@
   function render() {
     game.buttons = [];
     ctx.save();
-    if (game.shake > 0.02) {
-      ctx.translate((Math.random() - 0.5) * game.shake * 14, (Math.random() - 0.5) * game.shake * 14);
-    }
+    EW.FX.applyShake(ctx, VIEW_W, VIEW_H, game.time);
     EW.drawWorld(ctx, game, VIEW_W, VIEW_H);
     if (!game.plane.dead) {
       EW.drawPlane(ctx, game.cam, VIEW_W, VIEW_H, game.plane, game.world);
     }
+    EW.FX.drawWorldFx(ctx, game, VIEW_W, VIEW_H);
     ctx.restore();
+
+    EW.FX.drawPost(ctx, game, VIEW_W, VIEW_H);
+    if (game.state === 'flying') EW.FX.drawPopups(ctx, game, VIEW_W, VIEW_H);
 
     if (game.state === 'flying' || game.state === 'paused') {
       EW.drawHUD(ctx, game, VIEW_W, VIEW_H);
@@ -672,6 +631,10 @@
       EW.Sound.setMuted(game.save.muted);
       storeSave();
     }
+    if (code === 'KeyF') {
+      EW.FX.setEnabled(!EW.FX.isEnabled());
+      showMessage(EW.FX.isEnabled() ? 'CINEMATIC FX ON' : 'CINEMATIC FX OFF', '#e8eef8');
+    }
     if (code === 'Space' && game.state === 'flying') dropParcel();
     if ((code === 'KeyP' || code === 'Escape')) {
       if (game.state === 'flying') game.state = 'paused';
@@ -699,13 +662,19 @@
       startMission(shotMission);
       var ring = game.world.rings[0];
       if (ring) {
-        game.plane.x = ring.x - ring.nx * 300;
-        game.plane.y = ring.y - ring.ny * 300;
+        // Start just off the ring axis so the autopilot settles into a
+        // gentle 3/4 bank toward it — the hero plane reads big and
+        // clear with the ring ahead and the home-island fields below,
+        // instead of edge-on at the end of a hard intercept turn.
+        var latX = -ring.ny * 50;
+        var latY = ring.nx * 50;
+        game.plane.x = ring.x - ring.nx * 245 + latX;
+        game.plane.y = ring.y - ring.ny * 245 + latY;
         game.plane.z = ring.z + 4;
         game.plane.heading = Math.atan2(ring.nx, ring.ny);
-        game.plane.speed = 40;
-        game.plane.throttle = 0.68;
-        game.plane.bank = 0.1;
+        game.plane.speed = 52;
+        game.plane.throttle = 0.88;
+        game.plane.bank = 0.3;
       }
       game.autopilot = true;
     } else if (shotMode === 'briefing') {
@@ -761,7 +730,7 @@
     var steps = 0;
     var simStates = ['flying', 'title', 'briefing', 'howto'];
     while (accumulator >= STEP && steps < 5) {
-      if (simStates.indexOf(game.state) >= 0) {
+      if (simStates.indexOf(game.state) >= 0 && !game.shotFrozen) {
         if (game.autopilot && game.state === 'flying') {
           var saved = game.state;
           game.state = 'demo';
@@ -771,12 +740,13 @@
           stepSim(STEP);
         }
         game.time += STEP;
+        game.shotSteps = (game.shotSteps || 0) + 1;
       }
       accumulator -= STEP;
       steps++;
     }
     if (steps === 5) accumulator = 0;
-    EW.updateCamera(game.cam, game.plane, Math.max(dt, 0.001), VIEW_H);
+    EW.updateCamera(game.cam, game.plane, Math.max(dt, 0.001), VIEW_H, game, game.time);
     if (game.state === 'flying') {
       EW.Sound.setEngine(game.plane.throttle, EW.clamp(game.plane.speed / 70, 0, 1), !game.plane.dead && game.plane.fuel > 0);
     } else {
@@ -785,9 +755,32 @@
     render();
     if (shotMode) {
       game.shotClock += dt;
-      var readyAt = shotMode === 'flight' ? 3.0 : 0.6;
-      if (game.shotClock >= readyAt) window.__shotReady = true;
+      // The flight cover keys off sim steps, not wall time, so the
+      // staged moment (moderate bank, ring ahead) lands the same on
+      // fast and slow machines alike.
+      if (shotMode === 'flight') {
+        // Stage a ring burst just before the cover is captured so the
+        // new particle work is visible in the screenshot.
+        if (!game.shotFxDone && (game.shotSteps || 0) >= 100) {
+          game.shotFxDone = true;
+          var ring0 = game.world.rings[0];
+          if (ring0) {
+            EW.FX.ringBurst(ring0);
+            EW.FX.popup(ring0.x, ring0.y, ring0.z + 3, '+100', '#ffd23e', false);
+          }
+        }
+        if ((game.shotSteps || 0) >= 125) {
+          // Freeze the sim so the captured frame is exactly the
+          // staged moment, however long the screenshot takes.
+          game.shotFrozen = true;
+          window.__shotReady = true;
+        }
+      } else if (game.shotClock >= 0.6) {
+        game.shotFrozen = true;
+        window.__shotReady = true;
+      }
     }
   }
+  window.__ewGame = game; // playtest/debug handle (no secrets, local game)
   requestAnimationFrame(frame);
 })();

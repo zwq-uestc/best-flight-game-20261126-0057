@@ -4,35 +4,45 @@
 // same world on every machine.
 
 EW.PALETTES = {
+  // Lighting model (round 4): one directional sun per mission. sunStrength
+  // scales the diffuse contrast (storm light is diffuse, dawn/dusk rake
+  // hard), fillCol is the cool ambient that tints shadow faces, fogNear
+  // is where aerial perspective starts, and nightLights (0..1) drives
+  // runway lamps, lit windows, nav lights and ring glow.
   dawn: {
     skyTop: [58, 74, 128], skyMid: [214, 140, 110], skyHorizon: [250, 196, 140],
-    sun: [255, 214, 150], sunAz: 0.9, sunEl: 0.16, fog: [232, 180, 150], fogFar: 2800,
+    sun: [255, 214, 150], sunAz: 0.9, sunEl: 0.16, fog: [232, 180, 150], fogFar: 2800, fogNear: 380,
     water: [52, 96, 140], sand: [222, 196, 150], grassLow: [96, 140, 80], grassHigh: [70, 110, 66],
     rock: [120, 105, 95], snow: [240, 240, 245], ambient: 0.95, stars: false, rain: false,
+    sunStrength: 1.18, fillCol: [86, 96, 150], nightLights: 0.35,
   },
   day: {
     skyTop: [64, 130, 210], skyMid: [120, 180, 235], skyHorizon: [205, 232, 250],
-    sun: [255, 246, 220], sunAz: 2.2, sunEl: 0.85, fog: [190, 220, 245], fogFar: 3200,
+    sun: [255, 246, 220], sunAz: 2.2, sunEl: 0.85, fog: [190, 220, 245], fogFar: 3200, fogNear: 460,
     water: [38, 110, 170], sand: [230, 210, 160], grassLow: [88, 160, 84], grassHigh: [58, 120, 60],
     rock: [128, 118, 108], snow: [245, 248, 252], ambient: 1.05, stars: false, rain: false,
+    sunStrength: 1.0, fillCol: [140, 170, 210], nightLights: 0,
   },
   dusk: {
     skyTop: [44, 44, 92], skyMid: [150, 80, 110], skyHorizon: [245, 150, 90],
-    sun: [255, 180, 110], sunAz: 4.4, sunEl: 0.1, fog: [210, 140, 130], fogFar: 2600,
+    sun: [255, 180, 110], sunAz: 4.4, sunEl: 0.1, fog: [210, 140, 130], fogFar: 2600, fogNear: 340,
     water: [44, 70, 120], sand: [210, 175, 140], grassLow: [80, 120, 70], grassHigh: [55, 95, 55],
     rock: [105, 90, 85], snow: [235, 230, 240], ambient: 0.85, stars: false, rain: false,
+    sunStrength: 1.22, fillCol: [110, 80, 140], nightLights: 0.8,
   },
   night: {
     skyTop: [8, 13, 34], skyMid: [20, 32, 64], skyHorizon: [52, 74, 116],
-    sun: [220, 230, 255], sunAz: 1.2, sunEl: 0.6, fog: [30, 42, 70], fogFar: 2400,
+    sun: [220, 230, 255], sunAz: 1.2, sunEl: 0.6, fog: [30, 42, 70], fogFar: 2400, fogNear: 260,
     water: [16, 36, 66], sand: [104, 98, 86], grassLow: [40, 70, 48], grassHigh: [30, 54, 38],
     rock: [68, 64, 68], snow: [170, 180, 200], ambient: 0.72, stars: true, rain: false,
+    sunStrength: 0.75, fillCol: [40, 55, 95], nightLights: 1,
   },
   storm: {
     skyTop: [52, 60, 78], skyMid: [90, 100, 118], skyHorizon: [150, 158, 168],
-    sun: [205, 205, 200], sunAz: 2.8, sunEl: 0.5, fog: [140, 148, 158], fogFar: 2000,
+    sun: [205, 205, 200], sunAz: 2.8, sunEl: 0.5, fog: [140, 148, 158], fogFar: 2000, fogNear: 170,
     water: [40, 66, 88], sand: [180, 168, 140], grassLow: [70, 110, 66], grassHigh: [48, 86, 48],
     rock: [100, 95, 90], snow: [220, 225, 230], ambient: 0.8, stars: false, rain: true,
+    sunStrength: 0.42, fillCol: [120, 130, 145], nightLights: 0.5,
   },
 };
 
@@ -229,6 +239,11 @@ EW.buildWorld = function (courseIndex, seedOverride) {
     { x: 60, y: 70, w: 12, d: 10, h: 6, rot: 0.3, kind: 'house' },
     { x: -58, y: -90, w: 11, d: 9, h: 5.5, rot: -0.2, kind: 'house' },
     { x: 72, y: -140, w: 10, d: 9, h: 5, rot: 0.1, kind: 'house' },
+    { x: 98, y: 34, w: 11, d: 9, h: 5.5, rot: -0.4, kind: 'house' },
+    { x: -92, y: -42, w: 12, d: 10, h: 6, rot: 0.5, kind: 'house' },
+    { x: 44, y: 152, w: 10, d: 9, h: 5, rot: 0.15, kind: 'house' },
+    { x: -74, y: 124, w: 13, d: 10, h: 6.5, rot: -0.3, kind: 'house' },
+    { x: 114, y: -96, w: 18, d: 12, h: 7, rot: 0.2, kind: 'hangar' },
   ];
   for (var bi = 0; bi < buildings.length; bi++) {
     buildings[bi].z = heightAt(buildings[bi].x, buildings[bi].y);
@@ -250,7 +265,11 @@ EW.buildWorld = function (courseIndex, seedOverride) {
       if (EW.dist2(tx, ty, zones[tz].x, zones[tz].y) < 70) nearZone = true;
     }
     if (nearZone) continue;
-    trees.push({ x: tx, y: ty, z: th, s: EW.randRange(rng, 0.8, 1.5), tone: rng() });
+    trees.push({
+      x: tx, y: ty, z: th,
+      s: EW.randRange(rng, 0.8, 1.5), tone: rng(),
+      round: rng() < 0.45,
+    });
   }
 
   // --- clouds ---
@@ -266,6 +285,66 @@ EW.buildWorld = function (courseIndex, seedOverride) {
     });
   }
 
+  // --- the headland lighthouse: low land with water close by ---
+  var lighthouse = null;
+  for (var lhTry = 0; lhTry < 400 && !lighthouse; lhTry++) {
+    var la = rng() * EW.TAU;
+    var lr = EW.randRange(rng, 420, 1500);
+    var lx = Math.sin(la) * lr;
+    var ly = Math.cos(la) * lr;
+    var lhh = heightAt(lx, ly);
+    if (lhh < 3 || lhh > 34) continue;
+    var nearWater = false;
+    for (var wd = 0; wd < 8; wd++) {
+      var wa = (wd / 8) * EW.TAU;
+      if (heightAt(lx + Math.sin(wa) * 170, ly + Math.cos(wa) * 170) < 0.3) {
+        nearWater = true;
+        break;
+      }
+    }
+    if (!nearWater) continue;
+    lighthouse = { x: lx, y: ly, z: lhh, h: 26 };
+  }
+  if (!lighthouse) {
+    lighthouse = { x: 520, y: -380, z: Math.max(3, heightAt(520, -380)), h: 26 };
+  }
+
+  // --- boats sailing slow circles on open water ---
+  var boats = [];
+  var boatTries = 0;
+  while (boats.length < 4 && boatTries < 400) {
+    boatTries++;
+    var bcx = EW.randRange(rng, -2400, 2400);
+    var bcy = EW.randRange(rng, -2400, 2400);
+    var br = EW.randRange(rng, 180, 420);
+    var wet = true;
+    for (var bp = 0; bp < 8; bp++) {
+      var ba = (bp / 8) * EW.TAU;
+      if (heightAt(bcx + Math.cos(ba) * br, bcy + Math.sin(ba) * br) > -1.5) {
+        wet = false;
+        break;
+      }
+    }
+    if (!wet) continue;
+    boats.push({
+      cx: bcx, cy: bcy, r: br,
+      speed: EW.randRange(rng, 0.008, 0.016) * (rng() < 0.5 ? -1 : 1),
+      phase: rng() * EW.TAU,
+      s: EW.randRange(rng, 0.8, 1.3),
+    });
+  }
+
+  // --- a bird flock riding the thermal off the volcano's flank ---
+  var birds = {
+    x: volcano.x + 430,
+    y: volcano.y - 310,
+    z: 170,
+    r: 130,
+    count: 9,
+    phase: rng() * EW.TAU,
+  };
+  birds.z = EW.clamp(heightAt(birds.x, birds.y) + 115, 120, 270);
+
   return {
     course: course,
     palette: palette,
@@ -279,6 +358,9 @@ EW.buildWorld = function (courseIndex, seedOverride) {
     buildings: buildings,
     trees: trees,
     clouds: clouds,
+    lighthouse: lighthouse,
+    boats: boats,
+    birds: birds,
     start: start,
     heightAt: heightAt,
     windDir: course.windDir * EW.DEG,
